@@ -1,0 +1,7 @@
+{
+  "name": "tasktrack-pro",
+  "integrations": {
+    "capacitor": {}
+  },
+  "type": "angular"
+}

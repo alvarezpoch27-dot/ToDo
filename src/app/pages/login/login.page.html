@@ -1,0 +1,48 @@
+<ion-header>
+  <ion-toolbar color="primary">
+    <ion-title>{{ isRegisterMode ? 'Crear cuenta' : 'Iniciar sesión' }}</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <form (ngSubmit)="onSubmit()">
+    <ion-item>
+      <ion-label position="floating">Email</ion-label>
+      <ion-input
+        type="email"
+        name="email"
+        [(ngModel)]="email"
+        required
+        autocomplete="email"
+      ></ion-input>
+    </ion-item>
+
+    <ion-item>
+      <ion-label position="floating">Contraseña</ion-label>
+      <ion-input
+        type="password"
+        name="password"
+        [(ngModel)]="password"
+        required
+        autocomplete="current-password"
+      ></ion-input>
+    </ion-item>
+
+    <ion-text color="danger" *ngIf="errorMessage">
+      <p class="ion-padding-top">{{ errorMessage }}</p>
+    </ion-text>
+
+    <ion-button
+      expand="block"
+      type="submit"
+      class="ion-margin-top"
+      [disabled]="loading || !email || !password"
+    >
+      {{ loading ? 'Procesando...' : (isRegisterMode ? 'Registrarme' : 'Entrar') }}
+    </ion-button>
+
+    <ion-button fill="clear" expand="block" (click)="toggleMode()">
+      {{ isRegisterMode ? 'Ya tengo cuenta' : 'Quiero registrarme' }}
+    </ion-button>
+  </form>
+</ion-content>
