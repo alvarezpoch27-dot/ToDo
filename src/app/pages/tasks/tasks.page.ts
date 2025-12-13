@@ -1,11 +1,12 @@
 import { Component, OnInit } from '@angular/core';
-import { IonicModule, AlertController } from '@ionic/angular';
+import { IonicModule, AlertController, ToastController } from '@ionic/angular';
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
-import { TaskService } from '../../service/task.service';
-import { AuthService } from '../../service/auth.service';
+import { TaskService } from '../../services/task.service';
+import { AuthService } from '../../services/auth.service';
 import { Router } from '@angular/router';
 import { Task } from '../../models/task';
 import { Observable } from 'rxjs';
+import { Capacitor } from '@capacitor/core';
 
 @Component({
   selector: 'app-tasks',
@@ -16,16 +17,20 @@ import { Observable } from 'rxjs';
 })
 export class TasksPage implements OnInit {
   tasks$!: Observable<Task[]>;
+  syncing$!: Observable<boolean>;
 
   constructor(
     private taskService: TaskService,
     private authService: AuthService,
     private router: Router,
-    private alertController: AlertController
+    private alertController: AlertController,
+    private toastController: ToastController
   ) {}
 
-  ngOnInit() {
+  async ngOnInit() {
+    await this.taskService.ensureLoaded();
     this.tasks$ = this.taskService.getTasks();
+    this.syncing$ = this.taskService.isSyncing();
   }
 
   addTask() {
@@ -53,8 +58,14 @@ export class TasksPage implements OnInit {
         {
           text: 'Eliminar',
           role: 'destructive',
-          handler: () => {
-            this.taskService.deleteTask(task.id);
+          handler: async () => {
+            await this.taskService.deleteTask(task.id);
+            const toast = await this.toastController.create({
+              message: 'Tarea eliminada',
+              duration: 2000,
+              position: 'bottom'
+            });
+            await toast.present();
           }
         }
       ]
@@ -76,5 +87,20 @@ export class TasksPage implements OnInit {
 
   trackById(_: number, task: Task) {
     return task.id;
+  }
+
+  toSrc(task: Task): string | undefined {
+    if (task.localPhotoPath) return Capacitor.convertFileSrc(task.localPhotoPath);
+    return task.photoUrl;
+  }
+
+  async syncNow() {
+    await this.taskService.syncNow();
+    const toast = await this.toastController.create({
+      message: 'Sincronización completada',
+      duration: 2000,
+      position: 'bottom'
+    });
+    await toast.present();
   }
 }

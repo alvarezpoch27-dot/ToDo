@@ -5,15 +5,21 @@
 </ion-header>
 
 <ion-content class="ion-padding">
-  <form (ngSubmit)="save()">
+  <form [formGroup]="form" (ngSubmit)="save()">
     <ion-item>
-      <ion-label position="floating">Título</ion-label>
-      <ion-input [(ngModel)]="title" name="title" required></ion-input>
+      <ion-label position="floating">Título *</ion-label>
+      <ion-input formControlName="title" required></ion-input>
     </ion-item>
+    <ion-text color="danger" *ngIf="form.get('title')?.hasError('required') && form.get('title')?.touched">
+      <small>El título es obligatorio</small>
+    </ion-text>
+    <ion-text color="danger" *ngIf="form.get('title')?.hasError('minlength') && form.get('title')?.touched">
+      <small>Mínimo 3 caracteres</small>
+    </ion-text>
 
     <ion-item>
       <ion-label position="floating">Descripción</ion-label>
-      <ion-textarea [(ngModel)]="description" name="description"></ion-textarea>
+      <ion-textarea formControlName="description"></ion-textarea>
     </ion-item>
 
     <ion-item lines="none" class="ion-margin-top">
@@ -21,22 +27,22 @@
       <ion-button (click)="takePhoto()" type="button">Tomar foto</ion-button>
     </ion-item>
 
-    <div *ngIf="photoUrl" class="preview">
-      <img [src]="photoUrl" />
+    <div *ngIf="localPhotoPath || photoUrl" class="preview">
+      <img [src]="getPhotoSrc()" />
     </div>
 
     <ion-item lines="none" class="ion-margin-top">
       <ion-label>Ubicación</ion-label>
       <ion-button (click)="setLocation()" type="button">
-        Usar ubicación actual
+        {{ isNew ? 'Usar ubicación actual' : 'Actualizar ubicación' }}
       </ion-button>
     </ion-item>
 
-    <ion-text *ngIf="latitude != null && longitude != null">
-      <p>📍 {{ latitude | number:'1.4-4' }}, {{ longitude | number:'1.4-4' }}</p>
+    <ion-text *ngIf="latitude !== null && longitude !== null">
+      <p>📍 {{ latitude | number:'1.6-6' }}, {{ longitude | number:'1.6-6' }} <small *ngIf="accuracy">(±{{ accuracy }}m)</small></p>
     </ion-text>
 
-    <ion-button expand="block" type="submit" class="ion-margin-top" [disabled]="saving">
+    <ion-button expand="block" type="submit" class="ion-margin-top" [disabled]="!form.valid || saving">
       {{ saving ? 'Guardando...' : 'Guardar' }}
     </ion-button>
   </form>

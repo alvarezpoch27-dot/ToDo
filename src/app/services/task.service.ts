@@ -4,24 +4,65 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { Task } from '../models/task';
 import { AuthService } from './auth.service';
 import { ApiService } from './api.service';
+import { SyncQueue, SyncQueueItem } from '../models/sync-queue';
 
-const TASKS_KEY = 'tt_tasks_v1';
+const TASKS_KEY_PREFIX = 'tasks_';
+const LEGACY_TASKS_KEY = 'tt_tasks_v1';
+const SYNC_QUEUE_KEY_PREFIX = 'syncQueue_';
 
 @Injectable({ providedIn: 'root' })
 export class TaskService {
   private tasksSubject = new BehaviorSubject<Task[]>([]);
   private loadedForUserId: string | null = null;
+  private syncingSubject = new BehaviorSubject<boolean>(false);
 
   constructor(
     private auth: AuthService,
     private api: ApiService
-  ) {}
+  ) {
+    this.setupLogoutListener();
+    this.setupConnectionListener();
+  }
+
+
+  // listen for logout to clear in-memory cache (avoids circular DI)
+  private setupLogoutListener(): void {
+    try {
+      window.addEventListener('tt:logout', () => {
+        this.tasksSubject.next([]);
+        this.loadedForUserId = null;
+      });
+    } catch {
+      // ignore in non-browser environments
+    }
+  }
+
+  private setupConnectionListener(): void {
+    // Reintentar cola de sync cuando hay conexión
+    try {
+      window.addEventListener('online', () => this.syncNow().catch(() => {}));
+    } catch {
+      // ignore
+    }
+  }
 
   getTasks(): Observable<Task[]> {
     return this.tasksSubject.asObservable();
   }
 
+  isSyncing(): Observable<boolean> {
+    return this.syncingSubject.asObservable();
+  }
+
+  private ensureInit(): void {
+    // one-time setup
+    if ((this as any)._initDone) return;
+    this.setupLogoutListener();
+    (this as any)._initDone = true;
+  }
+
   async ensureLoaded(): Promise<void> {
+    this.ensureInit();
     const ok = await this.auth.isAuthenticated();
     if (!ok) {
       this.tasksSubject.next([]);
@@ -42,16 +83,19 @@ export class TaskService {
     return this.tasksSubject.value.find((t) => t.id === id) ?? null;
   }
 
-  async addTask(input: { title: string; description?: string }): Promise<Task> {
+  async addTask(input: Partial<Task> & { title: string }): Promise<Task> {
     await this.ensureLoaded();
     const now = new Date().toISOString();
     const task: Task = {
-      id: crypto.randomUUID(),
+      id: input.id ?? crypto.randomUUID(),
       userId: this.auth.currentUserId,
       title: input.title,
       description: input.description ?? '',
-      done: false,
-      createdAt: now,
+      photoUrl: input.photoUrl,
+      latitude: input.latitude,
+      longitude: input.longitude,
+      done: input.done ?? false,
+      createdAt: input.createdAt ?? now,
       updatedAt: now,
       isSynced: false,
     };
@@ -61,7 +105,6 @@ export class TaskService {
     await this.writeAllTasks(all);
     this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
 
-   
     await this.trySyncCreate(task);
 
     return task;
@@ -172,7 +215,15 @@ export class TaskService {
   }
 
   private async readAllTasks(): Promise<Task[]> {
-    const { value } = await Preferences.get({ key: TASKS_KEY });
+    let key = LEGACY_TASKS_KEY;
+    try {
+      const uid = this.auth.currentUserId;
+      if (uid) key = `${TASKS_KEY_PREFIX}${uid}_v1`;
+    } catch {
+      // fallback to legacy
+    }
+
+    const { value } = await Preferences.get({ key });
     if (!value) return [];
     try {
       const parsed = JSON.parse(value);
@@ -183,7 +234,14 @@ export class TaskService {
   }
 
   private async writeAllTasks(tasks: Task[]): Promise<void> {
-    await Preferences.set({ key: TASKS_KEY, value: JSON.stringify(tasks) });
+    let key = LEGACY_TASKS_KEY;
+    try {
+      const uid = this.auth.currentUserId;
+      if (uid) key = `${TASKS_KEY_PREFIX}${uid}_v1`;
+    } catch {
+      // ignore
+    }
+    await Preferences.set({ key, value: JSON.stringify(tasks) });
   }
 
   private async trySyncCreate(task: Task): Promise<void> {
@@ -286,4 +344,98 @@ export class TaskService {
     await this.writeAllTasks(all);
     this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === userId && !t.deleted)));
   }
+
+  // ===== SINCRONIZACIÓN =====
+
+  async syncNow(): Promise<void> {
+    if (this.syncingSubject.value) return;
+    this.syncingSubject.next(true);
+
+    try {
+      // 1. Procesar cola offline si hay
+      await this.processSyncQueue();
+
+      // 2. Traer cambios del servidor
+      await this.syncFromServer();
+    } catch (e) {
+      // silenciar errores de sync
+    } finally {
+      this.syncingSubject.next(false);
+    }
+  }
+
+  private async processSyncQueue(): Promise<void> {
+    if (!this.api.isEnabled()) return;
+
+    const userId = this.auth.currentUserId;
+    const queue = await this.readSyncQueue();
+    const succeededIds = new Set<string>();
+
+    for (const item of queue.items) {
+      if (succeededIds.has(item.id)) continue;
+
+      try {
+        if (item.op === 'create') {
+          const remote = await this.api.createTask(userId, item.payload);
+          await this.markSynced(item.taskId, remote.remoteId);
+          succeededIds.add(item.id);
+        } else if (item.op === 'update' && item.payload.remoteId) {
+          await this.api.updateTask(userId, item.payload.remoteId, item.payload);
+          await this.markSynced(item.taskId, item.payload.remoteId);
+          succeededIds.add(item.id);
+        } else if (item.op === 'delete' && item.payload.remoteId) {
+          await this.api.deleteTask(userId, item.payload.remoteId);
+          await this.markSynced(item.taskId, item.payload.remoteId);
+          succeededIds.add(item.id);
+        }
+      } catch (e) {
+        // reintentar en próximo sync
+      }
+    }
+
+    // Guardar queue sin items que se sincronizaron
+    const updated: SyncQueue = {
+      items: queue.items.filter((i) => !succeededIds.has(i.id)),
+      lastSyncAt: Date.now(),
+    };
+    await this.writeSyncQueue(updated);
+  }
+
+  private async addToSyncQueue(taskId: string, op: 'create' | 'update' | 'delete', payload: any): Promise<void> {
+    const queue = await this.readSyncQueue();
+    queue.items.push({
+      id: crypto.randomUUID(),
+      taskId,
+      op,
+      payload,
+      timestamp: Date.now(),
+      retries: 0,
+    });
+    await this.writeSyncQueue(queue);
+  }
+
+  private async readSyncQueue(): Promise<SyncQueue> {
+    try {
+      const userId = this.auth.currentUserId;
+      const key = `${SYNC_QUEUE_KEY_PREFIX}${userId}_v1`;
+      const { value } = await Preferences.get({ key });
+      if (!value) return { items: [], lastSyncAt: 0 };
+      return JSON.parse(value) as SyncQueue;
+    } catch {
+      return { items: [], lastSyncAt: 0 };
+    }
+  }
+
+  private async writeSyncQueue(queue: SyncQueue): Promise<void> {
+    try {
+      const userId = this.auth.currentUserId;
+      const key = `${SYNC_QUEUE_KEY_PREFIX}${userId}_v1`;
+      await Preferences.set({ key, value: JSON.stringify(queue) });
+    } catch {
+      // silenciar
+    }
+  }
+
+  // ===== FIN SINCRONIZACIÓN =====
 }
+

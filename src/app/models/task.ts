@@ -4,7 +4,9 @@ export interface Task {
   title: string;
   description: string;
   photoUrl?: string;
+  localPhotoPath?: string;
   latitude?: number;
+  accuracy?: number;
   longitude?: number;
   done: boolean;
   createdAt: string;

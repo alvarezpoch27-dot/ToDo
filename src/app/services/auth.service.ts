@@ -85,6 +85,11 @@ export class AuthService {
     await Preferences.remove({ key: SESSION_KEY });
     this._currentUserId = null;
     this._currentEmail = null;
+    try {
+      window.dispatchEvent(new CustomEvent('tt:logout'));
+    } catch {
+      // ignore
+    }
   }
 
   // --------- Internos ---------

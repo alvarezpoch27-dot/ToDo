@@ -2,6 +2,9 @@
   <ion-toolbar color="primary">
     <ion-title>Mis tareas</ion-title>
     <ion-buttons slot="end">
+      <ion-button (click)="syncNow()" [disabled]="syncing$ | async">
+        {{ (syncing$ | async) ? '⟳ Sincronizando...' : 'Sincronizar' }}
+      </ion-button>
       <ion-button (click)="logout()">Salir</ion-button>
     </ion-buttons>
   </ion-toolbar>
@@ -16,8 +19,8 @@
     <ion-list *ngIf="tasks.length > 0; else noTasksTpl">
       <ion-item-sliding *ngFor="let task of tasks; trackBy: trackById">
         <ion-item (click)="openDetail(task)">
-          <ion-avatar slot="start" *ngIf="task.photoUrl">
-            <img [src]="task.photoUrl" />
+          <ion-avatar slot="start" *ngIf="task.localPhotoPath || task.photoUrl">
+            <img [src]="toSrc(task)" />
           </ion-avatar>
 
           <ion-label>
@@ -28,7 +31,7 @@
             <p *ngIf="task.description">{{ task.description }}</p>
             <p>
               Creada: {{ task.createdAt | date:'short' }}
-              <span *ngIf="task.latitude != null && task.longitude != null">
+              <span *ngIf="task.latitude !== null && task.longitude !== null">
                 • 📍 {{ task.latitude | number:'1.4-4' }},
                 {{ task.longitude | number:'1.4-4' }}
               </span>
