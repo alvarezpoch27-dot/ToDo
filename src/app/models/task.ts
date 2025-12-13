@@ -14,5 +14,7 @@ export interface Task {
   deleted?: boolean;
   isSynced?: boolean;
   remoteId?: string;
+  syncStatus?: 'pending' | 'synced' | 'failed';
+  lastSyncError?: string;
   order?: number;
 }

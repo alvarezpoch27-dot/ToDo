@@ -1,10 +1,38 @@
-.preview {
+.preview,
+.photo-preview {
   margin-top: 10px;
   display: flex;
   justify-content: center;
+  border-radius: 8px;
+  overflow: hidden;
 }
-.preview img {
+
+.preview img,
+.photo-preview img {
   width: 100%;
   max-width: 360px;
+  max-height: 300px;
+  object-fit: cover;
   border-radius: 12px;
 }
+
+.location-info {
+  font-size: 0.9rem;
+  color: #666;
+  margin: 0.5rem 0;
+  padding: 0;
+}
+
+ion-text[color="danger"] {
+  small {
+    display: block;
+    margin-top: -0.5rem;
+    margin-bottom: 0.5rem;
+  }
+}
+
+ion-button[fill="outline"] {
+  --border-color: var(--ion-color-primary);
+  --color: var(--ion-color-primary);
+}
+

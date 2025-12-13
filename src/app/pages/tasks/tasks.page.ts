@@ -3,6 +3,7 @@ import { IonicModule, AlertController, ToastController } from '@ionic/angular';
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
 import { TaskService } from '../../services/task.service';
 import { AuthService } from '../../services/auth.service';
+import { ApiService } from '../../services/api.service';
 import { Router } from '@angular/router';
 import { Task } from '../../models/task';
 import { Observable } from 'rxjs';
@@ -18,10 +19,13 @@ import { Capacitor } from '@capacitor/core';
 export class TasksPage implements OnInit {
   tasks$!: Observable<Task[]>;
   syncing$!: Observable<boolean>;
+  syncStatus$!: Observable<any>;
+  apiEnabled$!: Observable<boolean>;
 
   constructor(
     private taskService: TaskService,
     private authService: AuthService,
+    private apiService: ApiService,
     private router: Router,
     private alertController: AlertController,
     private toastController: ToastController
@@ -31,6 +35,11 @@ export class TasksPage implements OnInit {
     await this.taskService.ensureLoaded();
     this.tasks$ = this.taskService.getTasks();
     this.syncing$ = this.taskService.isSyncing();
+    this.syncStatus$ = this.taskService.getSyncStatus();
+    this.apiEnabled$ = new Observable(obs => {
+      obs.next(this.apiService.isEnabled());
+      obs.complete();
+    });
   }
 
   addTask() {
@@ -44,6 +53,55 @@ export class TasksPage implements OnInit {
   logout() {
     this.authService.logout();
     this.router.navigate(['/login']);
+  }
+
+  async importFromServer() {
+    const alert = await this.alertController.create({
+      header: 'Importar tareas del servidor',
+      message: '¿Descargar todas las tareas del servidor y fusionarlas con tus locales?',
+      buttons: [
+        {
+          text: 'Cancelar',
+          role: 'cancel'
+        },
+        {
+          text: 'Importar',
+          handler: async () => {
+            try {
+              await this.taskService.importFromServer((count) => {
+                return new Promise(async (resolve) => {
+                  const conf = await this.alertController.create({
+                    header: 'Confirmación',
+                    message: `Se van a importar ${count} tareas. ¿Continuar?`,
+                    buttons: [
+                      { text: 'No', role: 'cancel', handler: () => resolve(false) },
+                      { text: 'Sí', handler: () => resolve(true) }
+                    ]
+                  });
+                  await conf.present();
+                });
+              });
+              const toast = await this.toastController.create({
+                message: 'Importación completada',
+                duration: 2000,
+                color: 'success',
+                position: 'bottom'
+              });
+              await toast.present();
+            } catch (e: any) {
+              const toast = await this.toastController.create({
+                message: `Error: ${e?.message ?? 'Importación falló'}`,
+                duration: 3000,
+                color: 'danger',
+                position: 'bottom'
+              });
+              await toast.present();
+            }
+          }
+        }
+      ]
+    });
+    await alert.present();
   }
 
   async deleteTask(task: Task) {
@@ -96,11 +154,5 @@ export class TasksPage implements OnInit {
 
   async syncNow() {
     await this.taskService.syncNow();
-    const toast = await this.toastController.create({
-      message: 'Sincronización completada',
-      duration: 2000,
-      position: 'bottom'
-    });
-    await toast.present();
   }
 }

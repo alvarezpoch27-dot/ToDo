@@ -28,6 +28,7 @@ export class TaskDetailPage implements OnInit {
   localPhotoPath?: string;
   accuracy?: number | undefined;
   saving = false;
+  errorMessage = '';
 
   constructor(
     private route: ActivatedRoute,
@@ -98,12 +99,24 @@ export class TaskDetailPage implements OnInit {
     this.accuracy = loc.accuracy;
   }
 
-  save(): void {
-    if (!this.form.valid) return;
+  async save(): Promise<void> {
+    if (!this.form.valid) {
+      this.errorMessage = 'Por favor, revisa los datos';
+      return;
+    }
+
+    const titleControl = this.form.get('title');
+    if (titleControl) {
+      titleControl.setValue((titleControl.value as string).trim());
+    }
+    const descControl = this.form.get('description');
+    if (descControl) {
+      descControl.setValue((descControl.value as string).trim());
+    }
 
     const payload: Partial<Task> & { title: string } = {
-      title: this.form.get('title')!.value.trim(),
-      description: this.form.get('description')!.value.trim(),
+      title: this.form.get('title')!.value,
+      description: this.form.get('description')!.value,
       photoUrl: this.photoUrl,
       localPhotoPath: this.localPhotoPath,
       latitude: this.latitude,
@@ -112,22 +125,29 @@ export class TaskDetailPage implements OnInit {
     };
 
     this.saving = true;
+    this.errorMessage = '';
 
     try {
       if (this.isNew) {
-        this.taskService.addTask(payload as any);
+        await this.taskService.addTask(payload as any);
+        await this.showToast('Tarea creada exitosamente', 'success');
       } else {
-        // only patch the editable fields; preserve done/createdAt/etc.
-        this.taskService.updateTask(this.taskId, payload);
+        await this.taskService.updateTask(this.taskId, payload);
+        await this.showToast('Tarea actualizada exitosamente', 'success');
       }
-
-      this.showToast(this.isNew ? 'Tarea creada' : 'Tarea actualizada');
-    } catch (e) {
-      this.showToast('Error al guardar', 'danger');
+      await this.router.navigate(['/tasks']);
+    } catch (e: any) {
+      const msg = e?.message ?? 'Error desconocido';
+      this.errorMessage = msg;
+      await this.showToast(`Error: ${msg}`, 'danger');
+      console.error('Save error:', e);
     } finally {
       this.saving = false;
-      this.router.navigate(['/tasks']);
     }
+  }
+
+  async cancel(): Promise<void> {
+    await this.router.navigate(['/tasks']);
   }
 
   private async showToast(message: string, color?: string) {

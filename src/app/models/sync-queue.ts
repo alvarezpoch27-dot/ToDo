@@ -12,9 +12,24 @@ export interface SyncQueueItem {
   payload: any;
   timestamp: number;
   retries: number;
+  maxRetries?: number;
+  lastError?: string;
+  nextRetryAt?: number;
 }
 
 export interface SyncQueue {
   items: SyncQueueItem[];
   lastSyncAt: number;
+  successCount?: number;
+  failCount?: number;
+  pendingCount?: number;
+}
+
+export interface SyncStatus {
+  syncing: boolean;
+  queueLength: number;
+  succeededCount: number;
+  failedCount: number;
+  pendingCount: number;
+  lastError?: string;
 }

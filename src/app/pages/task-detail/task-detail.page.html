@@ -1,14 +1,18 @@
 <ion-header>
   <ion-toolbar color="primary">
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/tasks"></ion-back-button>
+    </ion-buttons>
     <ion-title>{{ isNew ? 'Nueva tarea' : 'Editar tarea' }}</ion-title>
   </ion-toolbar>
 </ion-header>
 
 <ion-content class="ion-padding">
   <form [formGroup]="form" (ngSubmit)="save()">
+    <!-- Título -->
     <ion-item>
       <ion-label position="floating">Título *</ion-label>
-      <ion-input formControlName="title" required></ion-input>
+      <ion-input formControlName="title" required maxlength="255"></ion-input>
     </ion-item>
     <ion-text color="danger" *ngIf="form.get('title')?.hasError('required') && form.get('title')?.touched">
       <small>El título es obligatorio</small>
@@ -17,33 +21,55 @@
       <small>Mínimo 3 caracteres</small>
     </ion-text>
 
-    <ion-item>
+    <!-- Descripción -->
+    <ion-item class="ion-margin-top">
       <ion-label position="floating">Descripción</ion-label>
-      <ion-textarea formControlName="description"></ion-textarea>
+      <ion-textarea formControlName="description" maxlength="2000" rows="4"></ion-textarea>
     </ion-item>
+    <ion-text color="medium" class="ion-text-end">
+      <small>{{ (form.get('description')?.value?.length || 0) }}/2000</small>
+    </ion-text>
 
+    <!-- Foto -->
     <ion-item lines="none" class="ion-margin-top">
       <ion-label>Foto</ion-label>
-      <ion-button (click)="takePhoto()" type="button">Tomar foto</ion-button>
-    </ion-item>
-
-    <div *ngIf="localPhotoPath || photoUrl" class="preview">
-      <img [src]="getPhotoSrc()" />
-    </div>
-
-    <ion-item lines="none" class="ion-margin-top">
-      <ion-label>Ubicación</ion-label>
-      <ion-button (click)="setLocation()" type="button">
-        {{ isNew ? 'Usar ubicación actual' : 'Actualizar ubicación' }}
+      <ion-button (click)="takePhoto()" type="button" fill="outline" size="small">
+        📷 Tomar foto
       </ion-button>
     </ion-item>
 
-    <ion-text *ngIf="latitude !== null && longitude !== null">
-      <p>📍 {{ latitude | number:'1.6-6' }}, {{ longitude | number:'1.6-6' }} <small *ngIf="accuracy">(±{{ accuracy }}m)</small></p>
+    <div *ngIf="localPhotoPath || photoUrl" class="photo-preview ion-margin-vertical">
+      <img [src]="getPhotoSrc()" alt="Foto de tarea" />
+    </div>
+
+    <!-- Ubicación -->
+    <ion-item lines="none" class="ion-margin-top">
+      <ion-label>Ubicación</ion-label>
+      <ion-button (click)="setLocation()" type="button" fill="outline" size="small">
+        📍 {{ isNew ? 'Usar ubicación' : 'Actualizar' }}
+      </ion-button>
+    </ion-item>
+
+    <ion-text *ngIf="latitude !== undefined && longitude !== undefined" class="ion-margin">
+      <p class="location-info">
+        📍 {{ latitude | number:'1.6-6' }}, {{ longitude | number:'1.6-6' }} 
+        <small *ngIf="accuracy">(±{{ accuracy }}m)</small>
+      </p>
     </ion-text>
 
-    <ion-button expand="block" type="submit" class="ion-margin-top" [disabled]="!form.valid || saving">
-      {{ saving ? 'Guardando...' : 'Guardar' }}
-    </ion-button>
+    <!-- Error message -->
+    <ion-text color="danger" *ngIf="errorMessage" class="ion-margin-vertical">
+      <small>{{ errorMessage }}</small>
+    </ion-text>
+
+    <!-- Action buttons -->
+    <div class="ion-margin-top">
+      <ion-button expand="block" type="submit" [disabled]="!form.valid || saving">
+        {{ saving ? 'Guardando...' : 'Guardar' }}
+      </ion-button>
+      <ion-button expand="block" fill="outline" type="button" (click)="cancel()" [disabled]="saving">
+        Cancelar
+      </ion-button>
+    </div>
   </form>
 </ion-content>

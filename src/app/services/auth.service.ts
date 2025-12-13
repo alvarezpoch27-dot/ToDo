@@ -1,5 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Preferences } from '@capacitor/preferences';
+import { EncryptionService } from './encryption.service';
+import { environment } from '../../environments/environment';
 
 type StoredUser = {
   id: string;
@@ -21,6 +23,9 @@ const SESSION_KEY = 'tt_session_v1';
 export class AuthService {
   private _currentUserId: string | null = null;
   private _currentEmail: string | null = null;
+  private usingFirebase = false;
+
+  constructor(private encryption: EncryptionService) {}
 
   get currentUserId(): string {
     if (!this._currentUserId) throw new Error('No hay sesión activa.');
@@ -40,11 +45,45 @@ export class AuthService {
     return true;
   }
 
+  async getIdToken(): Promise<string | null> {
+    // If Firebase configured, try to get ID token via dynamic import
+    if ((environment as any).firebase) {
+      try {
+        const { getAuth } = await import('firebase/auth');
+        const auth = getAuth();
+        const user = auth.currentUser as any;
+        if (user) return await user.getIdToken();
+      } catch {
+        // ignore
+      }
+    }
+    return null;
+  }
+
   async register(email: string, password: string): Promise<void> {
     email = email.trim().toLowerCase();
     this.validateEmail(email);
     this.validatePassword(password);
 
+    if ((environment as any).firebase) {
+      // Use Firebase Auth
+      const { getAuth, createUserWithEmailAndPassword } = await import('firebase/auth');
+      const { initializeApp } = await import('firebase/app');
+      initializeApp((environment as any).firebase);
+      const auth = getAuth();
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const user = cred.user as any;
+      const token = await user.getIdToken();
+      this.usingFirebase = true;
+      await this.encryption.setKeyFromToken(token).catch(() => {});
+      const session: Session = { userId: user.uid, email, loginAt: new Date().toISOString() };
+      await this.setSession(session);
+      this._currentUserId = user.uid;
+      this._currentEmail = email;
+      return;
+    }
+
+    // Fallback to local registration
     const users = await this.getUsers();
     const exists = users.some((u) => u.email === email);
     if (exists) throw new Error('Ese email ya está registrado.');
@@ -69,6 +108,23 @@ export class AuthService {
     this.validateEmail(email);
     if (!password) throw new Error('La contraseña es obligatoria.');
 
+    if ((environment as any).firebase) {
+      const { getAuth, signInWithEmailAndPassword } = await import('firebase/auth');
+      const { initializeApp } = await import('firebase/app');
+      initializeApp((environment as any).firebase);
+      const auth = getAuth();
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      const user = cred.user as any;
+      const token = await user.getIdToken();
+      this.usingFirebase = true;
+      await this.encryption.setKeyFromToken(token).catch(() => {});
+      const session: Session = { userId: user.uid, email, loginAt: new Date().toISOString() };
+      await this.setSession(session);
+      this._currentUserId = user.uid;
+      this._currentEmail = email;
+      return;
+    }
+
     const users = await this.getUsers();
     const user = users.find((u) => u.email === email);
     if (!user) throw new Error('Usuario no encontrado.');
@@ -82,9 +138,22 @@ export class AuthService {
   }
 
   async logout(): Promise<void> {
+    // Clear session and encryption key
     await Preferences.remove({ key: SESSION_KEY });
     this._currentUserId = null;
     this._currentEmail = null;
+    try {
+      this.encryption.clearKey();
+    } catch {}
+
+    if (this.usingFirebase && (environment as any).firebase) {
+      try {
+        const { getAuth, signOut } = await import('firebase/auth');
+        const auth = getAuth();
+        await signOut(auth);
+      } catch {}
+    }
+
     try {
       window.dispatchEvent(new CustomEvent('tt:logout'));
     } catch {
@@ -110,7 +179,13 @@ export class AuthService {
     const { value } = await Preferences.get({ key: SESSION_KEY });
     if (!value) return null;
     try {
-      const s = JSON.parse(value) as Session;
+      // try decrypt if encryption available
+      let raw = value;
+      try {
+        const dec = await this.encryption.maybeDecryptString(value);
+        if (dec) raw = dec;
+      } catch {}
+      const s = JSON.parse(raw) as Session;
       if (!s?.userId || !s?.email) return null;
       return s;
     } catch {
@@ -119,6 +194,18 @@ export class AuthService {
   }
 
   private async setSession(session: Session): Promise<void> {
+    try {
+      // if encryption key available, encrypt session
+      if ((this.encryption as any)?.maybeDecryptString) {
+        const token = await this.getIdToken();
+        if (token) {
+          await this.encryption.setKeyFromToken(token).catch(() => {});
+          const enc = await this.encryption.encryptString(JSON.stringify(session));
+          await Preferences.set({ key: SESSION_KEY, value: enc });
+          return;
+        }
+      }
+    } catch {}
     await Preferences.set({ key: SESSION_KEY, value: JSON.stringify(session) });
   }
 

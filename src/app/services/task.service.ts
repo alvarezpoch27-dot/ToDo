@@ -4,7 +4,8 @@ import { BehaviorSubject, Observable } from 'rxjs';
 import { Task } from '../models/task';
 import { AuthService } from './auth.service';
 import { ApiService } from './api.service';
-import { SyncQueue, SyncQueueItem } from '../models/sync-queue';
+import { SyncQueue, SyncQueueItem, SyncStatus } from '../models/sync-queue';
+import { EncryptionService } from './encryption.service';
 
 const TASKS_KEY_PREFIX = 'tasks_';
 const LEGACY_TASKS_KEY = 'tt_tasks_v1';
@@ -15,10 +16,18 @@ export class TaskService {
   private tasksSubject = new BehaviorSubject<Task[]>([]);
   private loadedForUserId: string | null = null;
   private syncingSubject = new BehaviorSubject<boolean>(false);
+  private syncStatusSubject = new BehaviorSubject<SyncStatus>({
+    syncing: false,
+    queueLength: 0,
+    succeededCount: 0,
+    failedCount: 0,
+    pendingCount: 0,
+  });
 
   constructor(
     private auth: AuthService,
     private api: ApiService
+    , private encryption: EncryptionService
   ) {
     this.setupLogoutListener();
     this.setupConnectionListener();
@@ -52,6 +61,10 @@ export class TaskService {
 
   isSyncing(): Observable<boolean> {
     return this.syncingSubject.asObservable();
+  }
+
+  getSyncStatus(): Observable<SyncStatus> {
+    return this.syncStatusSubject.asObservable();
   }
 
   private ensureInit(): void {
@@ -92,7 +105,9 @@ export class TaskService {
       title: input.title,
       description: input.description ?? '',
       photoUrl: input.photoUrl,
+      localPhotoPath: input.localPhotoPath,
       latitude: input.latitude,
+      accuracy: input.accuracy,
       longitude: input.longitude,
       done: input.done ?? false,
       createdAt: input.createdAt ?? now,
@@ -161,10 +176,8 @@ export class TaskService {
     await this.ensureLoaded();
     const userId = this.auth.currentUserId;
 
-    
     if (!this.api.isEnabled()) return;
 
-   
     const remoteTasks = await this.api.listTasks(userId);
 
     const all = await this.readAllTasks();
@@ -179,22 +192,33 @@ export class TaskService {
       const local = rt.remoteId ? byRemoteId.get(rt.remoteId) : null;
 
       if (!local) {
-       
-        all.push({
+        // Create new task from remote
+        const newTask: Task = {
           ...rt,
+          description: rt.description ?? '',
+          done: rt.done ?? false,
           userId,
           isSynced: true,
           deleted: false,
-        });
+        };
+        all.push(newTask);
       } else {
-        
+        // Merge: prefer remote if newer
         const localTime = Date.parse(local.updatedAt);
         const remoteTime = Date.parse(rt.updatedAt);
 
         if (remoteTime > localTime) {
           const idx = all.findIndex((x) => x.id === local.id);
           if (idx !== -1) {
-            all[idx] = { ...local, ...rt, userId, isSynced: true, deleted: false };
+            all[idx] = { 
+              ...local, 
+              ...rt, 
+              description: rt.description ?? '',
+              done: rt.done ?? false,
+              userId, 
+              isSynced: true, 
+              deleted: false 
+            };
           }
         }
       }
@@ -202,6 +226,48 @@ export class TaskService {
 
     await this.writeAllTasks(all);
     this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === userId && !t.deleted)));
+  }
+
+  async importFromServer(onConfirm?: (count: number) => Promise<boolean>): Promise<void> {
+    await this.ensureLoaded();
+    const userId = this.auth.currentUserId;
+
+    if (!this.api.isEnabled()) {
+      console.warn('API no configurada; no se puede importar del servidor.');
+      return;
+    }
+
+    try {
+      const remoteTasks = await this.api.listTasks(userId);
+      if (!remoteTasks.length) return;
+
+      // ask user before importing
+      if (onConfirm) {
+        const shouldContinue = await onConfirm(remoteTasks.length);
+        if (!shouldContinue) return;
+      }
+
+      const all = await this.readAllTasks();
+      const byRemoteId = new Map<string, Task>();
+      for (const t of all) {
+        if (t.remoteId) byRemoteId.set(t.remoteId, t);
+      }
+
+      for (const rt of remoteTasks) {
+        if (!rt.deleted) {
+          const existing = rt.remoteId ? byRemoteId.get(rt.remoteId) : null;
+          if (!existing) {
+            all.push({ ...rt, userId, isSynced: true, deleted: false } as Task);
+          }
+        }
+      }
+
+      await this.writeAllTasks(all);
+      this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === userId && !t.deleted)));
+    } catch (e) {
+      console.error('Import error:', e);
+      throw e;
+    }
   }
 
   
@@ -226,7 +292,12 @@ export class TaskService {
     const { value } = await Preferences.get({ key });
     if (!value) return [];
     try {
-      const parsed = JSON.parse(value);
+      let raw = value;
+      try {
+        const dec = await this.encryption.maybeDecryptString(value);
+        if (dec) raw = dec;
+      } catch {}
+      const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? (parsed as Task[]) : [];
     } catch {
       return [];
@@ -241,23 +312,64 @@ export class TaskService {
     } catch {
       // ignore
     }
+    try {
+      // encrypt if encryption key available
+      if ((this.encryption as any)?.maybeDecryptString) {
+        const token = await this.auth.getIdToken();
+        if (token) {
+          await this.encryption.setKeyFromToken(token).catch(() => {});
+          const enc = await this.encryption.encryptString(JSON.stringify(tasks));
+          await Preferences.set({ key, value: enc });
+          return;
+        }
+      }
+    } catch {}
     await Preferences.set({ key, value: JSON.stringify(tasks) });
   }
 
   private async trySyncCreate(task: Task): Promise<void> {
-    if (!this.api.isEnabled()) return;
+    // If API disabled, enqueue create for later
+    if (!this.api.isEnabled()) {
+      await this.addToSyncQueue(task.id, 'create', task);
+      const all = await this.readAllTasks();
+      const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
+      if (idx !== -1) {
+        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: undefined };
+        await this.writeAllTasks(all);
+        this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
+      }
+      return;
+    }
+
     try {
       const remote = await this.api.createTask(task.userId, task);
       await this.markSynced(task.id, remote.remoteId);
-    } catch {
-      
+    } catch (e: any) {
+      await this.addToSyncQueue(task.id, 'create', task);
+      const all = await this.readAllTasks();
+      const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
+      if (idx !== -1) {
+        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
+        await this.writeAllTasks(all);
+        this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
+      }
     }
   }
 
   private async trySyncUpdate(task: Task): Promise<void> {
-    if (!this.api.isEnabled()) return;
+    if (!this.api.isEnabled()) {
+      await this.addToSyncQueue(task.id, 'update', task);
+      const all = await this.readAllTasks();
+      const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
+      if (idx !== -1) {
+        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: undefined };
+        await this.writeAllTasks(all);
+        this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
+      }
+      return;
+    }
+
     try {
-      
       if (!task.remoteId) {
         const remote = await this.api.createTask(task.userId, task);
         await this.markSynced(task.id, remote.remoteId);
@@ -265,20 +377,46 @@ export class TaskService {
       }
       await this.api.updateTask(task.userId, task.remoteId, task);
       await this.markSynced(task.id, task.remoteId);
-    } catch {
-      
+    } catch (e: any) {
+      await this.addToSyncQueue(task.id, 'update', task);
+      const all = await this.readAllTasks();
+      const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
+      if (idx !== -1) {
+        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
+        await this.writeAllTasks(all);
+        this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
+      }
     }
   }
 
   private async trySyncDelete(task: Task): Promise<void> {
-    if (!this.api.isEnabled()) return;
+    // If API disabled or no remoteId, enqueue delete
+    if (!this.api.isEnabled() || !task.remoteId) {
+      await this.addToSyncQueue(task.id, 'delete', { id: task.id, remoteId: task.remoteId });
+      const all = await this.readAllTasks();
+      const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
+      if (idx !== -1) {
+        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: undefined };
+        await this.writeAllTasks(all);
+        this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
+      }
+      return;
+    }
+
     try {
       if (task.remoteId) {
         await this.api.deleteTask(task.userId, task.remoteId);
       }
       await this.markSynced(task.id, task.remoteId);
-    } catch {
-      
+    } catch (e: any) {
+      await this.addToSyncQueue(task.id, 'delete', { id: task.id, remoteId: task.remoteId });
+      const all = await this.readAllTasks();
+      const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
+      if (idx !== -1) {
+        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
+        await this.writeAllTasks(all);
+        this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
+      }
     }
   }
 
@@ -345,8 +483,6 @@ export class TaskService {
     this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === userId && !t.deleted)));
   }
 
-  // ===== SINCRONIZACIÓN =====
-
   async syncNow(): Promise<void> {
     if (this.syncingSubject.value) return;
     this.syncingSubject.next(true);
@@ -357,8 +493,25 @@ export class TaskService {
 
       // 2. Traer cambios del servidor
       await this.syncFromServer();
-    } catch (e) {
-      // silenciar errores de sync
+
+      // 3. Update sync status
+      const queue = await this.readSyncQueue();
+      this.syncStatusSubject.next({
+        syncing: false,
+        queueLength: queue.items.length,
+        succeededCount: queue.successCount ?? 0,
+        failedCount: queue.failCount ?? 0,
+        pendingCount: queue.items.length,
+      });
+    } catch (e: any) {
+      this.syncStatusSubject.next({
+        syncing: false,
+        queueLength: 0,
+        succeededCount: 0,
+        failedCount: 0,
+        pendingCount: 0,
+        lastError: e?.message ?? 'Unknown error',
+      });
     } finally {
       this.syncingSubject.next(false);
     }
@@ -370,33 +523,60 @@ export class TaskService {
     const userId = this.auth.currentUserId;
     const queue = await this.readSyncQueue();
     const succeededIds = new Set<string>();
+    let successCount = 0;
+    let failCount = 0;
+
+    const now = Date.now();
 
     for (const item of queue.items) {
       if (succeededIds.has(item.id)) continue;
+
+      // Check if we should retry based on backoff
+      if (item.nextRetryAt && item.nextRetryAt > now) {
+        continue; // skip, not yet time to retry
+      }
 
       try {
         if (item.op === 'create') {
           const remote = await this.api.createTask(userId, item.payload);
           await this.markSynced(item.taskId, remote.remoteId);
           succeededIds.add(item.id);
+          successCount++;
         } else if (item.op === 'update' && item.payload.remoteId) {
           await this.api.updateTask(userId, item.payload.remoteId, item.payload);
           await this.markSynced(item.taskId, item.payload.remoteId);
           succeededIds.add(item.id);
+          successCount++;
         } else if (item.op === 'delete' && item.payload.remoteId) {
           await this.api.deleteTask(userId, item.payload.remoteId);
           await this.markSynced(item.taskId, item.payload.remoteId);
           succeededIds.add(item.id);
+          successCount++;
         }
-      } catch (e) {
-        // reintentar en próximo sync
+      } catch (e: any) {
+        const maxRetries = item.maxRetries ?? 5;
+        item.retries = (item.retries ?? 0) + 1;
+        item.lastError = e?.message ?? String(e);
+
+        if (item.retries >= maxRetries) {
+          succeededIds.add(item.id);
+          failCount++;
+          console.error(`Sync item ${item.id} failed after ${maxRetries} retries:`, item.lastError);
+        } else {
+          // exponential backoff: wait 2^retries seconds, capped at 1 hour
+          const backoffSecs = Math.min(Math.pow(2, item.retries), 3600);
+          item.nextRetryAt = now + backoffSecs * 1000;
+        }
       }
     }
 
-    // Guardar queue sin items que se sincronizaron
+    // Guardar queue sin items que se sincronizaron o llegaron a max retries
     const updated: SyncQueue = {
       items: queue.items.filter((i) => !succeededIds.has(i.id)),
       lastSyncAt: Date.now(),
+      successCount: (queue.successCount ?? 0) + successCount,
+      failCount: (queue.failCount ?? 0) + failCount,
+      pendingCount: queue.items.filter((i) => !succeededIds.has(i.id)).length,
     };
     await this.writeSyncQueue(updated);
   }
@@ -420,7 +600,14 @@ export class TaskService {
       const key = `${SYNC_QUEUE_KEY_PREFIX}${userId}_v1`;
       const { value } = await Preferences.get({ key });
       if (!value) return { items: [], lastSyncAt: 0 };
-      return JSON.parse(value) as SyncQueue;
+      try {
+        let raw = value;
+        const dec = await this.encryption.maybeDecryptString(value);
+        if (dec) raw = dec;
+        return JSON.parse(raw) as SyncQueue;
+      } catch {
+        return JSON.parse(value) as SyncQueue;
+      }
     } catch {
       return { items: [], lastSyncAt: 0 };
     }
@@ -430,6 +617,15 @@ export class TaskService {
     try {
       const userId = this.auth.currentUserId;
       const key = `${SYNC_QUEUE_KEY_PREFIX}${userId}_v1`;
+      try {
+        const token = await this.auth.getIdToken();
+        if (token) {
+          await this.encryption.setKeyFromToken(token).catch(() => {});
+          const enc = await this.encryption.encryptString(JSON.stringify(queue));
+          await Preferences.set({ key, value: enc });
+          return;
+        }
+      } catch {}
       await Preferences.set({ key, value: JSON.stringify(queue) });
     } catch {
       // silenciar
