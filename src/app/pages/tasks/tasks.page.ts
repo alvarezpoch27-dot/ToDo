@@ -1,13 +1,14 @@
 import { Component, OnInit } from '@angular/core';
 import { IonicModule, AlertController, ToastController } from '@ionic/angular';
 import { CommonModule, DatePipe, DecimalPipe } from '@angular/common';
-import { TaskService } from '../../services/task.service';
-import { AuthService } from '../../services/auth.service';
-import { ApiService } from '../../services/api.service';
+import { TaskService } from '../../core/services/task.service';
+import { AuthService } from '../../core/services/auth.service';
+import { ApiService } from '../../core/services/api.service';
 import { Router } from '@angular/router';
 import { Task } from '../../models/task';
 import { Observable } from 'rxjs';
 import { Capacitor } from '@capacitor/core';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-tasks',
@@ -37,7 +38,7 @@ export class TasksPage implements OnInit {
     this.syncing$ = this.taskService.isSyncing();
     this.syncStatus$ = this.taskService.getSyncStatus();
     this.apiEnabled$ = new Observable(obs => {
-      obs.next(this.apiService.isEnabled());
+      obs.next(!!environment.apiUrl);
       obs.complete();
     });
   }

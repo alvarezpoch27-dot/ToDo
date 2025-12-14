@@ -15,7 +15,7 @@ import { environment } from '../../../environments/environment';
  */
 @Injectable({ providedIn: 'root' })
 export class EncryptionService {
-  private encryptionKey: Buffer | Uint8Array | null = null;
+  private encryptionKey: Uint8Array | null = null;
   private logger = new Logger('EncryptionService', environment.debug);
 
   /**
@@ -35,14 +35,14 @@ export class EncryptionService {
   /**
    * Establecer clave de cifrado directamente
    */
-  setEncryptionKey(key: Buffer | Uint8Array): void {
+  setEncryptionKey(key: Uint8Array): void {
     this.encryptionKey = key;
   }
 
   /**
    * Obtener clave de cifrado actual
    */
-  getEncryptionKey(): Buffer | Uint8Array | null {
+  getEncryptionKey(): Uint8Array | null {
     return this.encryptionKey;
   }
 

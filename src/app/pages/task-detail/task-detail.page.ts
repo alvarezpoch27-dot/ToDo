@@ -3,10 +3,12 @@ import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { IonicModule, ToastController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
-import { TaskService, CameraService, LocationService } from '../../core';
+import { TaskService } from '../../core/services/task.service';
+import { CameraService } from '../../core/services/camera.service';
+import { LocationService } from '../../core/services/location.service';
 import { Task } from '../../models/task';
 import { Capacitor } from '@capacitor/core';
-import { AuthService } from '../../core';
+import { AuthService } from '../../core/services/auth.service';
 import { Logger } from '../../core/utils/logger.util';
 import { environment } from '../../../environments/environment';
 
@@ -74,7 +76,7 @@ export class TaskDetailPage implements OnInit {
   }
 
   async takePhoto(): Promise<void> {
-    const localPath = await this.cameraService.takePhoto();
+    const localPath = await this.cameraService.capturePhoto();
     if (localPath) {
       this.localPhotoPath = localPath;
       this.photoUrl = undefined;

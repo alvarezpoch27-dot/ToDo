@@ -1,10 +1,8 @@
 import { Injectable } from '@angular/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { PermissionsService } from './permissions.service';
-import { Logger } from '../core/utils/logger.util';
-import { environment } from '../../environments/environment';
-
-
+import { Logger } from '../utils/logger.util';
+import { environment } from '../../../environments/environment';
 
 function round6(n: number): number {
   return Math.round(n * 1e6) / 1e6;
@@ -18,7 +16,7 @@ export class LocationService {
   async getCurrentPosition(): Promise<{ latitude: number; longitude: number; accuracy?: number } | null> {
     try {
       // Request location permission first
-      const hasPermission = await this.permissions.requestLocationPermission();
+      const hasPermission = await this.permissions.requestPermission('geolocation');
       if (!hasPermission) {
         this.logger.warn('Location permission denied');
         return null;

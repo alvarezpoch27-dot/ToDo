@@ -46,10 +46,16 @@ export function generateSalt(): string {
   }
 
   // Node fallback
-  // Node fallback (use eval('require') to avoid bundlers resolving the module for browser builds)
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const nodeCrypto = typeof require === 'function' ? eval('require')('crypto') : null;
+    let nodeCrypto: any = null;
+    if (typeof eval === 'function') {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        nodeCrypto = eval('require')('crypto');
+      } catch {
+        // ignore
+      }
+    }
     if (nodeCrypto) return nodeCrypto.randomBytes(SALT_LENGTH).toString('hex');
   } catch {
     /* ignore */
@@ -109,13 +115,21 @@ export async function pbkdf2Hash(
 
   // Node fallback
   try {
-    const nodeCrypto = typeof require === 'function' ? eval('require')('crypto') : null;
+    let nodeCrypto: any = null;
+    if (typeof eval === 'function') {
+      try {
+        nodeCrypto = eval('require')('crypto');
+      } catch {
+        // ignore
+      }
+    }
     if (!nodeCrypto) throw new Error('Node crypto not available');
 
     return new Promise<HashResult>((resolve, reject) => {
-      nodeCrypto.pbkdf2(password, actualSalt, iterations, KEYLEN, 'sha256', (err: Error | null, derived: Buffer) => {
+      nodeCrypto.pbkdf2(password, actualSalt, iterations, KEYLEN, 'sha256', (err: Error | null, derived: any) => {
         if (err) return reject(err);
-        resolve({ salt: actualSalt, hash: derived.toString('hex'), iterations });
+        const derivedHex = derived instanceof Uint8Array ? toHex(derived) : derived.toString('hex');
+        resolve({ salt: actualSalt, hash: derivedHex, iterations });
       });
     });
   } catch (err) {
@@ -196,7 +210,14 @@ export function generateUUID(): string {
   }
   // Node fallback
   try {
-    const nodeCrypto = typeof require === 'function' ? eval('require')('crypto') : null;
+    let nodeCrypto: any = null;
+    if (typeof eval === 'function') {
+      try {
+        nodeCrypto = eval('require')('crypto');
+      } catch {
+        // ignore
+      }
+    }
     if (nodeCrypto && typeof nodeCrypto.randomUUID === 'function') {
       return nodeCrypto.randomUUID();
     }

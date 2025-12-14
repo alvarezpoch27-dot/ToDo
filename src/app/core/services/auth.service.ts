@@ -26,7 +26,7 @@ const ENCRYPTION_KEY_PREFIX = 'tt_encryption_key_';
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private currentSession: AuthSession | null = null;
-  private encryptionKey: Buffer | Uint8Array | null = null;
+  private encryptionKey: Uint8Array | null = null;
   private isFirebaseConfigured = false;
   private firebaseAuth: any = null;
 
@@ -284,7 +284,7 @@ export class AuthService {
   /**
    * Obtener clave de cifrado
    */
-  getEncryptionKey(): Buffer | Uint8Array | null {
+  getEncryptionKey(): Uint8Array | null {
     return this.encryptionKey;
   }
 

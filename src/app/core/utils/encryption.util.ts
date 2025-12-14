@@ -1,7 +1,20 @@
 // Node `crypto` is used only in Node environments (tests or server-side). Hide static import
-const nodeCrypto: any = (typeof window === 'undefined' && typeof require === 'function')
-  ? eval('require')('crypto')
-  : null;
+let nodeCrypto: any = null;
+let supportsNodeCrypto = false;
+
+// Try to load Node crypto only if in Node environment
+try {
+  if (typeof window === 'undefined' && typeof eval === 'function') {
+    try {
+      nodeCrypto = eval('require')('crypto');
+      supportsNodeCrypto = true;
+    } catch {
+      supportsNodeCrypto = false;
+    }
+  }
+} catch {
+  supportsNodeCrypto = false;
+}
 
 /**
  * Utilidades de cifrado AES-256-GCM
@@ -39,19 +52,19 @@ export interface CipherResult {
 export async function deriveKey(
   password: string,
   salt?: string
-): Promise<{ key: Buffer | Uint8Array; salt: string }> {
+): Promise<{ key: Uint8Array; salt: string }> {
   // If running in Node (tests) use nodeCrypto, otherwise use Web Crypto
-  const actualSalt = salt || (nodeCrypto ? nodeCrypto.randomBytes(SALT_LENGTH).toString('hex') : null);
+  const actualSalt = salt || (supportsNodeCrypto ? nodeCrypto.randomBytes(SALT_LENGTH).toString('hex') : null);
 
-  if (nodeCrypto) {
+  if (supportsNodeCrypto && nodeCrypto) {
     return new Promise((resolve, reject) => {
-      nodeCrypto.pbkdf2(password, actualSalt, 100_000, 32, 'sha256', (err: Error | null, derivedKey: Buffer) => {
+      nodeCrypto.pbkdf2(password, actualSalt, 100_000, 32, 'sha256', (err: Error | null, derivedKey: any) => {
         if (err) {
           reject(err);
           return;
         }
         resolve({
-          key: derivedKey,
+          key: new Uint8Array(derivedKey),
           salt: actualSalt,
         });
       });
@@ -82,12 +95,10 @@ export async function deriveKey(
 /**
  * Cifrar datos con AES-256-GCM
  */
-export function encrypt(plaintext: string, key: Buffer | Uint8Array): CipherResult {
-  if (nodeCrypto) {
-    const keyBuf: Buffer = Buffer.isBuffer(key) ? (key as Buffer) : Buffer.from(key as Uint8Array);
-
+export function encrypt(plaintext: string, key: Uint8Array): CipherResult {
+  if (supportsNodeCrypto && nodeCrypto) {
     const iv = nodeCrypto.randomBytes(IV_LENGTH);
-    const cipher = nodeCrypto.createCipheriv(ALGORITHM, keyBuf, iv);
+    const cipher = nodeCrypto.createCipheriv(ALGORITHM, key, iv);
 
     let encrypted = cipher.update(plaintext, 'utf8', 'hex');
     encrypted += cipher.final('hex');
@@ -107,12 +118,11 @@ export function encrypt(plaintext: string, key: Buffer | Uint8Array): CipherResu
     const iv = new Uint8Array(IV_LENGTH);
     globalThis.crypto.getRandomValues(iv);
     const enc = new TextEncoder();
-    const keyBuf = key instanceof Uint8Array ? key : new Uint8Array(key as any);
 
     return (() => {
       // Import raw key as CryptoKey for AES-GCM
       return (async (): Promise<CipherResult> => {
-        const cryptoKey = await (subtle as any).importKey('raw', keyBuf as any, { name: 'AES-GCM' }, false, ['encrypt']);
+        const cryptoKey = await (subtle as any).importKey('raw', key as any, { name: 'AES-GCM' }, false, ['encrypt']);
         const encrypted = await (subtle as any).encrypt({ name: 'AES-GCM', iv: iv as any }, cryptoKey, enc.encode(plaintext) as any);
         const encryptedBytes = new Uint8Array(encrypted);
         // Split ciphertext and auth tag (last TAG_LENGTH bytes)
@@ -133,17 +143,17 @@ export function encrypt(plaintext: string, key: Buffer | Uint8Array): CipherResu
 /**
  * Descifrar datos con AES-256-GCM
  */
-export function decrypt(cipherResult: CipherResult, key: Buffer | Uint8Array): string {
-  if (nodeCrypto) {
-    const keyBuf: Buffer = Buffer.isBuffer(key) ? (key as Buffer) : Buffer.from(key as Uint8Array);
-
+export function decrypt(cipherResult: CipherResult, key: Uint8Array): string {
+  if (supportsNodeCrypto && nodeCrypto) {
+    // These Buffer calls only execute in Node environment
+    const BufferType = (globalThis as any).Buffer;
     const decipher = nodeCrypto.createDecipheriv(
       ALGORITHM,
-      keyBuf,
-      Buffer.from(cipherResult.iv, 'hex')
+      key,
+      BufferType.from(cipherResult.iv, 'hex')
     );
 
-    decipher.setAuthTag(Buffer.from(cipherResult.authTag, 'hex'));
+    decipher.setAuthTag(BufferType.from(cipherResult.authTag, 'hex'));
 
     let decrypted = decipher.update(cipherResult.ciphertext, 'hex', 'utf8');
     decrypted += decipher.final('utf8');
@@ -160,10 +170,9 @@ export function decrypt(cipherResult: CipherResult, key: Buffer | Uint8Array): s
     const combined = new Uint8Array(cipher.length + tag.length);
     combined.set(cipher, 0);
     combined.set(tag, cipher.length);
-    const keyBuf = key instanceof Uint8Array ? key : new Uint8Array(key as any);
     const dec = new TextDecoder();
     return (async () => {
-      const cryptoKey = await (subtle as any).importKey('raw', keyBuf as any, { name: 'AES-GCM' }, false, ['decrypt']);
+      const cryptoKey = await (subtle as any).importKey('raw', key as any, { name: 'AES-GCM' }, false, ['decrypt']);
       const decrypted = await (subtle as any).decrypt({ name: 'AES-GCM', iv: iv as any }, cryptoKey, combined.buffer as any);
       return dec.decode(new Uint8Array(decrypted));
     })() as unknown as string;
@@ -172,10 +181,7 @@ export function decrypt(cipherResult: CipherResult, key: Buffer | Uint8Array): s
   throw new Error('No crypto available for decrypt');
 }
 
-/**
- * Cifrar objeto JSON
- */
-export function encryptObject<T>(obj: T, key: Buffer | Uint8Array): string {
+export function encryptObject<T>(obj: T, key: Uint8Array): string {
   const json = JSON.stringify(obj);
   const cipherResult = encrypt(json, key);
   return JSON.stringify(cipherResult);
@@ -184,7 +190,7 @@ export function encryptObject<T>(obj: T, key: Buffer | Uint8Array): string {
 /**
  * Descifrar objeto JSON
  */
-export function decryptObject<T>(encrypted: string, key: Buffer | Uint8Array): T {
+export function decryptObject<T>(encrypted: string, key: Uint8Array): T {
   const cipherResult = JSON.parse(encrypted) as CipherResult;
   const json = decrypt(cipherResult, key);
   return JSON.parse(json) as T;

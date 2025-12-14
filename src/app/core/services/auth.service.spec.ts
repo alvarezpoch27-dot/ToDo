@@ -23,6 +23,8 @@ describe('AuthService', () => {
       spyOn(Preferences, 'get').and.returnValue(Promise.resolve({ value: null } as any));
       // Ensure no in-memory session remains from other tests
       (service as any).currentSession = null;
+      // Force loadSession to return null for determinism
+      spyOn(service as any, 'loadSession').and.returnValue(Promise.resolve(null));
       const result = await service.isAuthenticated();
       expect(result).toBe(false);
     });
