@@ -56,6 +56,9 @@ describe('AuthService', () => {
 
     it('should throw error when user not found', async () => {
       spyOn(Preferences, 'get').and.returnValue(Promise.resolve({ value: null } as any));
+      // Force local fallback to avoid Firebase side-effects in CI
+      (service as any).isFirebaseConfigured = false;
+      (service as any).firebaseAuth = null;
       return expectAsync(service.login('test@example.com', 'password123')).toBeRejectedWithError(
         'Usuario no encontrado'
       );
