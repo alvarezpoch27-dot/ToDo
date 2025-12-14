@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { firstValueFrom, timeout } from 'rxjs';
 import { environment } from '../../environments/environment';
+import { Logger } from '../core/utils/logger.util';
 import { Task } from '../models/task';
 
 // Strict DTOs for API contracts
@@ -50,6 +51,7 @@ const API_TIMEOUT_MS = 15000;
 
 @Injectable({ providedIn: 'root' })
 export class ApiService {
+  private logger = new Logger('ApiService', environment.debug);
   constructor(private http: HttpClient) {}
 
   isEnabled(): boolean {
@@ -64,7 +66,7 @@ export class ApiService {
         this.http.get<SyncResponseDTO[]>(url).pipe(timeout(API_TIMEOUT_MS))
       );
     } catch (e: any) {
-      console.error('listTasks error:', e);
+      this.logger.error('listTasks error', e);
       throw new Error(`Failed to list tasks: ${e?.message ?? 'Unknown error'}`);
     }
   }
@@ -78,7 +80,7 @@ export class ApiService {
         this.http.post<SyncResponseDTO>(url, payload).pipe(timeout(API_TIMEOUT_MS))
       );
     } catch (e: any) {
-      console.error('createTask error:', e);
+      this.logger.error('createTask error', e);
       throw new Error(`Failed to create task: ${e?.message ?? 'Unknown error'}`);
     }
   }
@@ -92,7 +94,7 @@ export class ApiService {
         this.http.put<SyncResponseDTO>(url, payload).pipe(timeout(API_TIMEOUT_MS))
       );
     } catch (e: any) {
-      console.error('updateTask error:', e);
+      this.logger.error('updateTask error', e);
       throw new Error(`Failed to update task: ${e?.message ?? 'Unknown error'}`);
     }
   }
@@ -103,7 +105,7 @@ export class ApiService {
       const url = `${environment.apiUrl}/tasks/${encodeURIComponent(remoteId)}?userId=${encodeURIComponent(userId)}`;
       await firstValueFrom(this.http.delete<void>(url).pipe(timeout(API_TIMEOUT_MS)));
     } catch (e: any) {
-      console.error('deleteTask error:', e);
+      this.logger.error('deleteTask error', e);
       throw new Error(`Failed to delete task: ${e?.message ?? 'Unknown error'}`);
     }
   }

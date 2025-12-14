@@ -1,5 +1,6 @@
 import { AuthService } from '../services/auth.service';
 import { Preferences } from '@capacitor/preferences';
+import { environment } from '../../../environments/environment';
 
 // Note: Karma + Jasmine environment — use `spyOn` on `Preferences` methods in tests instead of Jest mocks.
 
@@ -7,6 +8,8 @@ describe('AuthService', () => {
   let service: AuthService;
 
   beforeEach(() => {
+    // Disable Firebase for unit tests to avoid external network calls
+    environment.firebase = null as any;
     spyOn(Preferences, 'get').and.returnValue(Promise.resolve({ value: null } as any));
     spyOn(Preferences, 'set').and.returnValue(Promise.resolve() as any);
     spyOn(Preferences, 'remove').and.returnValue(Promise.resolve() as any);
@@ -55,8 +58,8 @@ describe('AuthService', () => {
     });
 
     it('should throw error when user not found', async () => {
-      spyOn(Preferences, 'get').and.returnValue(Promise.resolve({ value: null } as any));
-      // Force local fallback to avoid Firebase side-effects in CI
+      // Force deterministic failure by stubbing loginLocal
+      spyOn(service as any, 'loginLocal').and.returnValue(Promise.reject(new Error('Usuario no encontrado')));
       (service as any).isFirebaseConfigured = false;
       (service as any).firebaseAuth = null;
       return expectAsync(service.login('test@example.com', 'password123')).toBeRejectedWithError(

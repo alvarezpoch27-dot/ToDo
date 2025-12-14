@@ -6,10 +6,13 @@ import { AuthService } from './auth.service';
 import { ApiService } from './api.service';
 import { SyncQueue, SyncQueueItem, SyncStatus } from '../models/sync-queue';
 import { EncryptionService } from './encryption.service';
+import { Logger } from '../core/utils/logger.util';
+import { environment } from '../../environments/environment';
 
 const TASKS_KEY_PREFIX = 'tasks_';
 const LEGACY_TASKS_KEY = 'tt_tasks_v1';
 const SYNC_QUEUE_KEY_PREFIX = 'syncQueue_';
+const DEFAULT_SYNC_MAX_RETRIES = 5;
 
 @Injectable({ providedIn: 'root' })
 export class TaskService {
@@ -23,6 +26,7 @@ export class TaskService {
     failedCount: 0,
     pendingCount: 0,
   });
+  private logger = new Logger('TaskService', environment.debug);
 
   constructor(
     private auth: AuthService,
@@ -233,7 +237,7 @@ export class TaskService {
     const userId = this.auth.currentUserId;
 
     if (!this.api.isEnabled()) {
-      console.warn('API no configurada; no se puede importar del servidor.');
+      this.logger.warn('API no configurada; no se puede importar del servidor.');
       return;
     }
 
@@ -265,7 +269,7 @@ export class TaskService {
       await this.writeAllTasks(all);
       this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === userId && !t.deleted)));
     } catch (e) {
-      console.error('Import error:', e);
+      this.logger.error('Import error', e);
       throw e;
     }
   }
@@ -554,17 +558,17 @@ export class TaskService {
           successCount++;
         }
       } catch (e: any) {
-        const maxRetries = item.maxRetries ?? 5;
+        const maxRetries = item.maxRetries ?? DEFAULT_SYNC_MAX_RETRIES;
         item.retries = (item.retries ?? 0) + 1;
         item.lastError = e?.message ?? String(e);
 
         if (item.retries >= maxRetries) {
           succeededIds.add(item.id);
           failCount++;
-          console.error(`Sync item ${item.id} failed after ${maxRetries} retries:`, item.lastError);
+          this.logger.error(`Sync item ${item.id} failed after ${maxRetries} retries`, item.lastError);
         } else {
-          // exponential backoff: wait 2^retries seconds, capped at 1 hour
-          const backoffSecs = Math.min(Math.pow(2, item.retries), 3600);
+          // exponential backoff with small jitter: wait ~2^retries seconds, capped at 1 hour
+          const backoffSecs = Math.min(Math.pow(2, item.retries) + Math.random(), 3600);
           item.nextRetryAt = now + backoffSecs * 1000;
         }
       }
@@ -591,6 +595,7 @@ export class TaskService {
       timestamp: Date.now(),
       retries: 0,
     });
+    this.logger.info(`Enqueued sync operation: ${op} for ${taskId}`);
     await this.writeSyncQueue(queue);
   }
 

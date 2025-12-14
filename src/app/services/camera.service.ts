@@ -3,6 +3,8 @@ import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import { PermissionsService } from './permissions.service';
+import { Logger } from '../core/utils/logger.util';
+import { environment } from '../../environments/environment';
 
 function dataUrlToBase64(dataUrl: string): string {
   const parts = dataUrl.split(',');
@@ -11,6 +13,7 @@ function dataUrlToBase64(dataUrl: string): string {
 
 @Injectable({ providedIn: 'root' })
 export class CameraService {
+  private logger = new Logger('CameraService', environment.debug);
   constructor(private permissions: PermissionsService) {}
 
   async takePhoto(): Promise<string | null> {
@@ -18,7 +21,7 @@ export class CameraService {
       // Request camera permission first
       const hasPermission = await this.permissions.requestCameraPermission();
       if (!hasPermission) {
-        console.warn('Camera permission denied');
+        this.logger.warn('Camera permission denied');
         return null;
       }
 
@@ -45,7 +48,7 @@ export class CameraService {
       const path = `photos/${fileName}`;
       return path;
     } catch (e) {
-      console.error('Camera error:', e);
+      this.logger.error('Camera error', e);
       return null;
     }
   }

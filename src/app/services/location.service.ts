@@ -1,6 +1,10 @@
 import { Injectable } from '@angular/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { PermissionsService } from './permissions.service';
+import { Logger } from '../core/utils/logger.util';
+import { environment } from '../../environments/environment';
+
+
 
 function round6(n: number): number {
   return Math.round(n * 1e6) / 1e6;
@@ -8,6 +12,7 @@ function round6(n: number): number {
 
 @Injectable({ providedIn: 'root' })
 export class LocationService {
+  private logger = new Logger('LocationService', environment.debug);
   constructor(private permissions: PermissionsService) {}
 
   async getCurrentPosition(): Promise<{ latitude: number; longitude: number; accuracy?: number } | null> {
@@ -15,7 +20,7 @@ export class LocationService {
       // Request location permission first
       const hasPermission = await this.permissions.requestLocationPermission();
       if (!hasPermission) {
-        console.warn('Location permission denied');
+        this.logger.warn('Location permission denied');
         return null;
       }
 
@@ -34,7 +39,7 @@ export class LocationService {
         accuracy: acc == null ? undefined : Math.round(acc * 100) / 100,
       };
     } catch (e) {
-      console.error('Location error:', e);
+      this.logger.error('Location error', e);
       return null;
     }
   }

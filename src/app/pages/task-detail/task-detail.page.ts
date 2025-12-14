@@ -9,6 +9,8 @@ import { LocationService } from '../../services/location.service';
 import { Task } from '../../models/task';
 import { Capacitor } from '@capacitor/core';
 import { AuthService } from '../../services/auth.service';
+import { Logger } from '../../core/utils/logger.util';
+import { environment } from '../../../environments/environment';
 
 @Component({
   selector: 'app-task-detail',
@@ -45,6 +47,8 @@ export class TaskDetailPage implements OnInit {
       description: ['']
     });
   }
+
+  private logger = new Logger('TaskDetailPage', environment.debug);
 
   ngOnInit(): void {
     // ensure tasks are loaded (safe if already loaded)
@@ -140,7 +144,7 @@ export class TaskDetailPage implements OnInit {
       const msg = e?.message ?? 'Error desconocido';
       this.errorMessage = msg;
       await this.showToast(`Error: ${msg}`, 'danger');
-      console.error('Save error:', e);
+      this.logger.error('Save error', e);
     } finally {
       this.saving = false;
     }
