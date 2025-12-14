@@ -3,12 +3,10 @@ import { CommonModule, DecimalPipe } from '@angular/common';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { IonicModule, ToastController } from '@ionic/angular';
 import { ActivatedRoute, Router } from '@angular/router';
-import { TaskService } from '../../services/task.service';
-import { CameraService } from '../../services/camera.service';
-import { LocationService } from '../../services/location.service';
+import { TaskService, CameraService, LocationService } from '../../core';
 import { Task } from '../../models/task';
 import { Capacitor } from '@capacitor/core';
-import { AuthService } from '../../services/auth.service';
+import { AuthService } from '../../core';
 import { Logger } from '../../core/utils/logger.util';
 import { environment } from '../../../environments/environment';
 

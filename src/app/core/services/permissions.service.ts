@@ -117,9 +117,35 @@ export class PermissionsService {
    */
   private async openAppSettings(): Promise<void> {
     try {
-      await (App as any).openUrl({
-        url: 'app-settings://',
-      });
+      // Try common platform-specific settings URLs with fallbacks
+      const tryUrls = [
+        'app-settings://', // Android common
+        'app-settings:',
+        'App-Prefs:root', // iOS older
+      ];
+
+      let opened = false;
+      for (const url of tryUrls) {
+        try {
+          // App.openUrl may not be available in all Capacitor runtime mocks
+          if ((App as any)?.openUrl) {
+            // some platforms reject unknown schemes; try-catch per attempt
+            // await returns a promise that resolves when the OS handles the URL
+            // If it throws, we try the next option.
+            // eslint-disable-next-line no-await-in-loop
+            await (App as any).openUrl({ url });
+            opened = true;
+            break;
+          }
+        } catch (err) {
+          this.logger.debug(`openAppSettings: scheme failed ${url}`, err);
+          // continue to next
+        }
+      }
+
+      if (!opened) {
+        this.logger.warn('Unable to open app settings via URL schemes; instruct user to open settings manually');
+      }
     } catch (error) {
       this.logger.error('Error opening app settings', error);
     }

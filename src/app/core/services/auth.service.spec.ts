@@ -21,6 +21,8 @@ describe('AuthService', () => {
   describe('isAuthenticated', () => {
     it('should return false when no session exists', async () => {
       spyOn(Preferences, 'get').and.returnValue(Promise.resolve({ value: null } as any));
+      // Ensure no in-memory session remains from other tests
+      (service as any).currentSession = null;
       const result = await service.isAuthenticated();
       expect(result).toBe(false);
     });
