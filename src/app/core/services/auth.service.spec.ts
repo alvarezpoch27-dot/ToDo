@@ -51,12 +51,12 @@ describe('AuthService', () => {
 
   describe('login', () => {
     it('should throw error for invalid email', async () => {
-      await expectAsync(service.login('invalid-email', 'password123')).toBeRejected();
+      return expectAsync(service.login('invalid-email', 'password123')).toBeRejected();
     });
 
     it('should throw error when user not found', async () => {
       spyOn(Preferences, 'get').and.returnValue(Promise.resolve({ value: null } as any));
-      await expectAsync(service.login('test@example.com', 'password123')).toBeRejectedWithError(
+      return expectAsync(service.login('test@example.com', 'password123')).toBeRejectedWithError(
         'Usuario no encontrado'
       );
     });
