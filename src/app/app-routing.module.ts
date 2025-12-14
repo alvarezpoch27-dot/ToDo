@@ -1,23 +1,21 @@
 import { NgModule } from '@angular/core';
 import { PreloadAllModules, RouterModule, Routes } from '@angular/router';
-import { AuthGuard } from './guards/auth.guard';
-import { GuestGuard } from './guards/guest.guard';
+import { AuthGuard } from './core/guards/auth.guard';
 
 const routes: Routes = [
   { path: '', redirectTo: 'login', pathMatch: 'full' },
 
   {
     path: 'login',
-    canActivate: [GuestGuard],
     loadChildren: () =>
-      import('./pages/login/login.module').then(m => m.LoginPageModule),
+      import('./pages/login/login.module').then((m) => m.LoginPageModule),
   },
 
   {
     path: 'tasks',
     canActivate: [AuthGuard],
     loadChildren: () =>
-      import('./pages/tasks/tasks.module').then(m => m.TasksPageModule),
+      import('./pages/tasks/tasks.module').then((m) => m.TasksPageModule),
   },
 
   {
@@ -25,14 +23,8 @@ const routes: Routes = [
     canActivate: [AuthGuard],
     loadChildren: () =>
       import('./pages/task-detail/task-detail.module').then(
-        m => m.TaskDetailPageModule
+        (m) => m.TaskDetailPageModule
       ),
-  },
-
-  {
-    path: 'home',
-    loadChildren: () =>
-      import('./home/home.module').then(m => m.HomePageModule),
   },
 
   { path: '**', redirectTo: 'login' },

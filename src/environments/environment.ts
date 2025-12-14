@@ -1,18 +1,20 @@
 export const environment = {
   production: false,
-  
-  apiUrl: '', // Set to actual backend URL when available (e.g., 'https://api.tasktrack.com')
 
-  // Firebase configuration (optional; leave empty if using local auth)
-  firebase: undefined as any, // Configure when using Firebase; see commented example in auth.service.ts
-  
-  // Example Firebase config (uncomment and fill when ready):
-  // firebase: {
-  //   apiKey: 'YOUR_API_KEY',
-  //   authDomain: 'YOUR_AUTH_DOMAIN',
-  //   projectId: 'YOUR_PROJECT_ID',
-  //   storageBucket: 'YOUR_STORAGE_BUCKET',
-  //   messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
-  //   appId: 'YOUR_APP_ID',
-  // }
+  // Habilitar logs de depuración
+  debug: true,
+
+  // URL de la API remota
+  apiUrl: 'https://api.tasktrack.example.com',
+
+  // Configuración de Firebase (REQUERIDA para producción)
+  // Obtener valores desde: https://console.firebase.google.com
+  firebase: {
+    apiKey: 'AIzaSyDhJ9p7kL-pL5vH8nM3oR0wX2yZ5aB4cD6',
+    authDomain: 'tasktrack-pro.firebaseapp.com',
+    projectId: 'tasktrack-pro',
+    storageBucket: 'tasktrack-pro.appspot.com',
+    messagingSenderId: '123456789012',
+    appId: '1:123456789012:web:a1b2c3d4e5f6g7h8i',
+  },
 };
