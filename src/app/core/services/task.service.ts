@@ -1,10 +1,9 @@
 import { Injectable } from '@angular/core';
 import { Preferences } from '@capacitor/preferences';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { Task } from '../../models/task';
+import { Task, SyncQueue, SyncQueueItem, SyncStatus } from '../models';
 import { AuthService } from './auth.service';
 import { ApiService } from './api.service';
-import { SyncQueue, SyncQueueItem, SyncStatus } from '../../models/sync-queue';
 import { EncryptionService } from './encryption.service';
 import { Logger } from '../utils/logger.util';
 import { environment } from '../../../environments/environment';
@@ -37,7 +36,7 @@ export class TaskService {
     this.setupConnectionListener();
   }
 
-  // listen for logout to clear in-memory cache (avoids circular DI)
+  
   private setupLogoutListener(): void {
     try {
       window.addEventListener('tt:logout', () => {
@@ -45,16 +44,16 @@ export class TaskService {
         this.loadedForUserId = null;
       });
     } catch {
-      // ignore in non-browser environments
+      
     }
   }
 
   private setupConnectionListener(): void {
-    // Reintentar cola de sync cuando hay conexión
+    
     try {
       window.addEventListener('online', () => this.syncNow().catch(() => {}));
     } catch {
-      // ignore
+      
     }
   }
 
@@ -71,7 +70,7 @@ export class TaskService {
   }
 
   private ensureInit(): void {
-    // one-time setup
+    
     if ((this as any)._initDone) return;
     this.setupLogoutListener();
     (this as any)._initDone = true;
@@ -115,7 +114,6 @@ export class TaskService {
       done: input.done ?? false,
       createdAt: input.createdAt ?? now,
       updatedAt: now,
-      isSynced: false,
     };
 
     const all = await this.readAllTasks();
@@ -140,7 +138,6 @@ export class TaskService {
       ...all[idx],
       ...patch,
       updatedAt: new Date().toISOString(),
-      isSynced: false,
     };
 
     all[idx] = updated;
@@ -159,7 +156,7 @@ export class TaskService {
     if (idx === -1) return;
 
     const t = all[idx];
-    all[idx] = { ...t, deleted: true, updatedAt: new Date().toISOString(), isSynced: false };
+    all[idx] = { ...t, deleted: true, updatedAt: new Date().toISOString() };
     await this.writeAllTasks(all);
     this.tasksSubject.next(this.sortTasks(all.filter((x) => x.userId === userId && !x.deleted)));
 
@@ -177,7 +174,7 @@ export class TaskService {
     await this.ensureLoaded();
     const userId = this.auth.currentUserId;
 
-    if (!environment.apiUrl) return; // Skip if API not configured
+    if (!environment.apiUrl) return; 
 
     try {
       const remoteTasks = await this.api.getTasks();
@@ -194,18 +191,17 @@ export class TaskService {
         const local = rt.remoteId ? byRemoteId.get(rt.remoteId) : null;
 
         if (!local) {
-          // Create new task from remote
+         
           const newTask: Task = {
             ...rt,
             description: rt.description ?? '',
             done: rt.done ?? false,
             userId,
-            isSynced: true,
             deleted: false,
           };
           all.push(newTask);
         } else {
-          // Merge: prefer remote if newer
+         
           const localTime = Date.parse(local.updatedAt);
           const remoteTime = Date.parse(rt.updatedAt);
 
@@ -218,7 +214,6 @@ export class TaskService {
                 description: rt.description ?? '',
                 done: rt.done ?? false,
                 userId,
-                isSynced: true,
                 deleted: false,
               };
             }
@@ -246,7 +241,7 @@ export class TaskService {
       const remoteTasks = await this.api.getTasks();
       if (!remoteTasks.length) return;
 
-      // ask user before importing
+     
       if (onConfirm) {
         const shouldContinue = await onConfirm(remoteTasks.length);
         if (!shouldContinue) return;
@@ -262,7 +257,7 @@ export class TaskService {
         if (!rt.deleted) {
           const existing = rt.remoteId ? byRemoteId.get(rt.remoteId) : null;
           if (!existing) {
-            all.push({ ...rt, userId, isSynced: true, deleted: false } as Task);
+            all.push({ ...rt, userId, deleted: false } as Task);
           }
         }
       }
@@ -276,7 +271,7 @@ export class TaskService {
   }
 
   private sortTasks(tasks: Task[]): Task[] {
-    // Ordenar solo por el campo 'order' (posición manual del usuario)
+   
     return [...tasks].sort((a, b) => {
       const orderA = a.order ?? Infinity;
       const orderB = b.order ?? Infinity;
@@ -290,7 +285,7 @@ export class TaskService {
       const uid = this.auth.currentUserId;
       if (uid) key = `${TASKS_KEY_PREFIX}${uid}_v1`;
     } catch {
-      // fallback to legacy
+      
     }
 
     const { value } = await Preferences.get({ key });
@@ -332,13 +327,13 @@ export class TaskService {
   }
 
   private async trySyncCreate(task: Task): Promise<void> {
-    // If API disabled, enqueue create for later
+   
     if (!environment.apiUrl) {
       await this.addToSyncQueue(task.id, 'create', task);
       const all = await this.readAllTasks();
       const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
       if (idx !== -1) {
-        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: undefined };
+        all[idx] = { ...all[idx], syncStatus: 'pending', lastSyncError: undefined };
         await this.writeAllTasks(all);
         this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
       }
@@ -353,7 +348,7 @@ export class TaskService {
       const all = await this.readAllTasks();
       const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
       if (idx !== -1) {
-        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
+        all[idx] = { ...all[idx], syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
         await this.writeAllTasks(all);
         this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
       }
@@ -366,7 +361,7 @@ export class TaskService {
       const all = await this.readAllTasks();
       const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
       if (idx !== -1) {
-        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: undefined };
+        all[idx] = { ...all[idx], syncStatus: 'pending', lastSyncError: undefined };
         await this.writeAllTasks(all);
         this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
       }
@@ -386,7 +381,7 @@ export class TaskService {
       const all = await this.readAllTasks();
       const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
       if (idx !== -1) {
-        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
+        all[idx] = { ...all[idx], syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
         await this.writeAllTasks(all);
         this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
       }
@@ -394,13 +389,13 @@ export class TaskService {
   }
 
   private async trySyncDelete(task: Task): Promise<void> {
-    // If API disabled or no remoteId, enqueue delete
+    
     if (!environment.apiUrl || !task.remoteId) {
       await this.addToSyncQueue(task.id, 'delete', { id: task.id, remoteId: task.remoteId });
       const all = await this.readAllTasks();
       const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
       if (idx !== -1) {
-        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: undefined };
+        all[idx] = { ...all[idx], syncStatus: 'pending', lastSyncError: undefined };
         await this.writeAllTasks(all);
         this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
       }
@@ -417,7 +412,7 @@ export class TaskService {
       const all = await this.readAllTasks();
       const idx = all.findIndex((t) => t.id === task.id && t.userId === task.userId);
       if (idx !== -1) {
-        all[idx] = { ...all[idx], isSynced: false, syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
+        all[idx] = { ...all[idx], syncStatus: 'pending', lastSyncError: e?.message ?? String(e) };
         await this.writeAllTasks(all);
         this.tasksSubject.next(this.sortTasks(all.filter((t) => t.userId === task.userId && !t.deleted)));
       }
@@ -433,7 +428,6 @@ export class TaskService {
     all[idx] = {
       ...all[idx],
       remoteId: remoteId ?? all[idx].remoteId,
-      isSynced: true,
       updatedAt: new Date().toISOString(),
     };
 
@@ -451,7 +445,7 @@ export class TaskService {
     const currentIdx = sorted.findIndex((t) => t.id === id);
     if (currentIdx <= 0) return;
 
-    // Intercambiar órdenes
+    
     const currentOrder = sorted[currentIdx].order ?? currentIdx;
     const prevOrder = sorted[currentIdx - 1].order ?? (currentIdx - 1);
 
@@ -474,7 +468,7 @@ export class TaskService {
     const currentIdx = sorted.findIndex((t) => t.id === id);
     if (currentIdx < 0 || currentIdx >= sorted.length - 1) return;
 
-    // Intercambiar órdenes
+   
     const currentOrder = sorted[currentIdx].order ?? currentIdx;
     const nextOrder = sorted[currentIdx + 1].order ?? (currentIdx + 1);
 
@@ -492,13 +486,13 @@ export class TaskService {
     this.syncingSubject.next(true);
 
     try {
-      // 1. Procesar cola offline si hay
+     
       await this.processSyncQueue();
 
-      // 2. Traer cambios del servidor
+      
       await this.syncFromServer();
 
-      // 3. Update sync status
+    
       const queue = await this.readSyncQueue();
       this.syncStatusSubject.next({
         syncing: false,
@@ -535,9 +529,9 @@ export class TaskService {
     for (const item of queue.items) {
       if (succeededIds.has(item.id)) continue;
 
-      // Check if we should retry based on backoff
+      
       if (item.nextRetryAt && item.nextRetryAt > now) {
-        continue; // skip, not yet time to retry
+        continue; 
       }
 
       try {
@@ -567,7 +561,7 @@ export class TaskService {
           failCount++;
           this.logger.error(`Sync item ${item.id} failed after ${maxRetries} retries`, item.lastError);
         } else {
-          // exponential backoff with small jitter: wait ~2^retries seconds, capped at 1 hour
+          
           const backoffSecs = Math.min(Math.pow(2, item.retries) + Math.random(), 3600);
           item.nextRetryAt = now + backoffSecs * 1000;
         }

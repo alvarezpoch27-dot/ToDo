@@ -24,7 +24,6 @@ import {
     IonicModule.forRoot(),
     HttpClientModule,
     AppRoutingModule,
-    AppComponent,
   ],
   providers: [
     { provide: RouteReuseStrategy, useClass: IonicRouteStrategy },

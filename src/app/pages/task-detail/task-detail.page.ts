@@ -6,7 +6,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { TaskService } from '../../core/services/task.service';
 import { CameraService } from '../../core/services/camera.service';
 import { LocationService } from '../../core/services/location.service';
-import { Task } from '../../models/task';
+import { Task } from '../../core/models';
 import { Capacitor } from '@capacitor/core';
 import { AuthService } from '../../core/services/auth.service';
 import { Logger } from '../../core/utils/logger.util';

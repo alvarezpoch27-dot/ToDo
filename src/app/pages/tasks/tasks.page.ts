@@ -5,7 +5,7 @@ import { TaskService } from '../../core/services/task.service';
 import { AuthService } from '../../core/services/auth.service';
 import { ApiService } from '../../core/services/api.service';
 import { Router } from '@angular/router';
-import { Task } from '../../models/task';
+import { Task } from '../../core/models';
 import { Observable } from 'rxjs';
 import { Capacitor } from '@capacitor/core';
 import { environment } from '../../../environments/environment';
