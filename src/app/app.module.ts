@@ -37,6 +37,5 @@ import {
     PermissionsService,
     AuthGuard,
   ],
-  bootstrap: [AppComponent],
 })
 export class AppModule {}

@@ -1,4 +1,5 @@
-import { AuthService } from '../services/auth.service';
+/// <reference types="jasmine" />
+import { AuthService } from './auth.service';
 import { Preferences } from '@capacitor/preferences';
 import { environment } from '../../../environments/environment';
 

@@ -1,3 +1,4 @@
+/// <reference types="jasmine" />
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TasksPage } from './tasks.page';
 import { IonicModule } from '@ionic/angular';

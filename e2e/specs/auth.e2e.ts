@@ -3,6 +3,9 @@
  * Prueba: Login con credenciales válidas
  */
 
+// WebDriver/Appium global driver (satisfacer compilador TS)
+declare const driver: any;
+
 describe('Authentication E2E', () => {
   beforeEach(async () => {
     // Navegar a la aplicación

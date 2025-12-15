@@ -1,4 +1,5 @@
-﻿import { EncryptionService } from '../services/encryption.service';
+﻿/// <reference types="jasmine" />
+import { EncryptionService } from './encryption.service';
 import * as encryptionUtil from '../utils/encryption.util';
 
 describe('EncryptionService', () => {

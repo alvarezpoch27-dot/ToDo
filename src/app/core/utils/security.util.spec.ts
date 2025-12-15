@@ -1,3 +1,4 @@
+/// <reference types="jasmine" />
 import { validateEmail, validatePassword, generateUUID, pbkdf2Hash, verifyPassword } from '../utils/security.util';
 
 describe('Security Utils', () => {

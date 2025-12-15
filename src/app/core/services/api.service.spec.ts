@@ -1,7 +1,8 @@
+/// <reference types="jasmine" />
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { ApiService } from '../services/api.service';
-import { AuthService } from '../services/auth.service';
+import { ApiService } from './api.service';
+import { AuthService } from './auth.service';
 
 describe('ApiService', () => {
   let service: ApiService;

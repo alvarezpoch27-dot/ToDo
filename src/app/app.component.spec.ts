@@ -1,4 +1,5 @@
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+/// <reference types="jasmine" />
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 
